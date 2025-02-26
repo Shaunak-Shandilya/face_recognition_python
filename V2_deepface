@@ -1,0 +1,168 @@
+from deepface import DeepFace #DeepFace model imported from deepface library
+import cv2
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+def load_dataset_faces(dataset_folder):
+    #Load faces from dataset folder into a dictionary
+    faces_db = {}
+    valid_extensions = ['.jpg', '.jpeg', '.png']
+    
+    if not os.path.exists(dataset_folder):
+        raise FileNotFoundError(f"Dataset folder not found at: {dataset_folder}")
+    
+    for filename in os.listdir(dataset_folder):
+        if any(filename.lower().endswith(ext) for ext in valid_extensions):
+            image_path = os.path.join(dataset_folder, filename)
+            faces_db[filename] = image_path
+    
+    return faces_db
+
+def highlight_faces(dataset_folder): #Highlight all faces present in both camera and dataset
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise Exception("Could not open webcam")
+
+    faces_db = load_dataset_faces(dataset_folder)
+    print("Highlight Mode - Showing all matched faces\nPress 'q' to quit")
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        matched_faces = set()  # Track unique matches
+
+        try:
+            for filename, db_path in faces_db.items():
+                result = DeepFace.verify(
+                    img1_path=rgb_frame,
+                    img2_path=db_path,
+                    model_name='VGG-Face',
+                    distance_metric='cosine',
+                    enforce_detection=True
+                )
+                
+                if result['verified']:
+                    face_coords = DeepFace.extract_faces(rgb_frame)[0]['facial_area']
+                    x, y, w, h = face_coords['x'], face_coords['y'], face_coords['w'], face_coords['h']
+                    
+                    # Highlight with yellow rectangle
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 2)
+                    cv2.putText(frame, "Known Face", 
+                              (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    matched_faces.add(filename)
+
+        except Exception:
+            pass
+
+        cv2.putText(frame, f"Matched faces: {len(matched_faces)}", 
+                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.imshow('Face Highlighting', frame)
+        
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+def normal_recognition(dataset_folder):
+    """Normal face recognition with detection and display"""
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise Exception("Could not open webcam")
+
+    faces_db = load_dataset_faces(dataset_folder)
+    print("Normal Mode - Detecting and displaying matches\nPress 'q' to quit or 's' to save screenshot")
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        try:
+            for filename, db_path in faces_db.items():
+                result = DeepFace.verify(
+                    img1_path=rgb_frame,
+                    img2_path=db_path,
+                    model_name='VGG-Face',
+                    distance_metric='cosine',
+                    enforce_detection=True
+                )
+                
+                if result['verified']:
+                    face_coords = DeepFace.extract_faces(rgb_frame)[0]['facial_area']
+                    x, y, w, h = face_coords['x'], face_coords['y'], face_coords['w'], face_coords['h']
+                    
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                    cv2.putText(frame, f"Match: {filename.split('.')[0]}", 
+                              (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    
+                    matched_img = cv2.imread(db_path)
+                    matched_img = cv2.cvtColor(matched_img, cv2.COLOR_BGR2RGB)
+                    plt.figure(figsize=(8, 4))
+                    plt.subplot(121), plt.imshow(rgb_frame), plt.title('Camera Feed')
+                    plt.subplot(122), plt.imshow(matched_img), plt.title(f'Match: {filename}')
+                    plt.show()
+
+        except Exception:
+            pass
+
+        cv2.imshow('Face Recognition', frame)
+        
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            break
+        elif key == ord('s'):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            cv2.imwrite(f"screenshot_{timestamp}.jpg", frame)
+            print(f"Screenshot saved as screenshot_{timestamp}.jpg")
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+def show_menu():
+    """Display menu and get user choice"""
+    while True:
+        print("\n=== Face Recognition Menu ===")
+        print("1. Highlight Mode (Show all known faces)")
+        print("2. Normal Mode (Detect and display matches)")
+        print("3. Exit")
+        
+        choice = input("Enter your choice (1-3): ")
+        
+        if choice in ['1', '2', '3']:
+            return choice
+        print("Invalid choice. Please enter 1, 2, or 3.")
+
+def main():
+    dataset_folder = "D:\Programming\sigmaphotos"  # Replace with your actual folder path
+    
+    try:
+        while True:
+            choice = show_menu()
+            
+            if choice == '1':
+                print("Starting Highlight Mode...")
+                highlight_faces(dataset_folder)
+            elif choice == '2':
+                print("Starting Normal Mode...")
+                normal_recognition(dataset_folder)
+            elif choice == '3':
+                print("Exiting program...")
+                break
+                
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    # Install required libraries:
+    # pip install deepface opencv-python matplotlib numpy
+    main()
